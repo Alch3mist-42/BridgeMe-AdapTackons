@@ -1,0 +1,254 @@
+// Opportunity Bridge — agreed schema v1 (Sunday night).
+// OWNER: role D. Changes go through a PR tagged `schema` so migrations don't clash.
+// POPIA: we store date of birth DERIVED from the SA ID, never the ID number itself.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+enum Role {
+  YOUTH
+  BUSINESS
+  ADMIN
+}
+
+enum TransportMode {
+  walk
+  taxi
+  bus
+}
+
+enum VerificationTier {
+  UNVERIFIED
+  ID_VERIFIED       // informal employer (e.g. spaza shop), verified by owner ID
+  CIPC_VERIFIED     // registered company
+}
+
+enum PlacementStatus {
+  DRAFT
+  OPEN
+  FILLED
+  CLOSED
+}
+
+enum ApplicationStatus {
+  APPLIED
+  SHORTLISTED
+  ACCEPTED
+  DECLINED
+  WITHDRAWN
+}
+
+enum EngagementStatus {
+  ACTIVE
+  COMPLETED
+  ENDED_EARLY
+}
+
+enum TimesheetStatus {
+  SUBMITTED
+  SIGNED_OFF
+  DISPUTED
+}
+
+enum ConsentType {
+  TERMS
+  POPIA_PROCESSING
+  AI_MATCHING
+  SHARE_WITH_EMPLOYER
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String?
+  name         String
+  role         Role
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  youthProfile YouthProfile?
+  business     Business?
+  consents     Consent[]
+  auditLogs    AuditLog[]
+  reportsMade  Report[]  @relation("reporter")
+}
+
+model YouthProfile {
+  id            String        @id @default(cuid())
+  userId        String        @unique
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dateOfBirth   DateTime      @db.Date
+  phone         String?
+  highestGrade  Int?          // 12 = matric
+  qualification String?
+  suburb        String
+  lat           Float
+  lng           Float
+  transportMode TransportMode @default(taxi)
+  bio           String?
+  skills        String[]
+  /// Azure OpenAI embedding of skills + bio (1536 dims for text-embedding-3-small)
+  embedding     Unsupported("vector(1536)")?
+  cvBlobKey     String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  applications  Application[]
+  engagements   Engagement[]
+}
+
+model Business {
+  id                String           @id @default(cuid())
+  ownerId           String           @unique
+  owner             User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name              String
+  sector            String
+  cipcNumber        String?          @unique
+  verificationTier  VerificationTier @default(UNVERIFIED)
+  payeRegistered    Boolean          @default(false)
+  taxCompliant      Boolean          @default(false)
+  suburb            String
+  lat               Float
+  lng               Float
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  placements        Placement[]
+}
+
+model Placement {
+  id              String          @id @default(cuid())
+  businessId      String
+  business        Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  title           String
+  description     String
+  requiredSkills  String[]
+  monthlyStipend  Decimal         @db.Decimal(10, 2)
+  hoursPerMonth   Int             @default(160)
+  durationMonths  Int             @default(6)
+  startDate       DateTime?       @db.Date
+  status          PlacementStatus @default(DRAFT)
+  embedding       Unsupported("vector(1536)")?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  applications    Application[]
+  engagements     Engagement[]
+
+  @@index([status])
+}
+
+model Application {
+  id          String            @id @default(cuid())
+  placementId String
+  placement   Placement         @relation(fields: [placementId], references: [id], onDelete: Cascade)
+  youthId     String
+  youth       YouthProfile      @relation(fields: [youthId], references: [id], onDelete: Cascade)
+  status      ApplicationStatus @default(APPLIED)
+  /// AI match score (0..1) and reason shown to both sides. The AI ranks; a human decides.
+  matchScore  Float?
+  matchWhy    String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@unique([placementId, youthId])
+}
+
+/// An accepted placement = a real employment relationship. Drives ETI + the evidence ledger.
+model Engagement {
+  id                  String           @id @default(cuid())
+  placementId         String
+  placement           Placement        @relation(fields: [placementId], references: [id])
+  youthId             String
+  youth               YouthProfile     @relation(fields: [youthId], references: [id])
+  startDate           DateTime         @db.Date
+  endDate             DateTime?        @db.Date
+  monthlyRemuneration Decimal          @db.Decimal(10, 2)
+  uifRegistered       Boolean          @default(false)
+  /// ETI months claimed before this engagement (e.g. at a previous employer)
+  priorEtiMonths      Int              @default(0)
+  isConnectedPerson   Boolean          @default(false)
+  status              EngagementStatus @default(ACTIVE)
+  createdAt           DateTime         @default(now())
+
+  timesheets          TimesheetEntry[]
+  incentiveCalcs      IncentiveCalc[]
+}
+
+/// Evidence ledger: one row per week of real work.
+model TimesheetEntry {
+  id            String          @id @default(cuid())
+  engagementId  String
+  engagement    Engagement      @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  weekStart     DateTime        @db.Date
+  hours         Float
+  tasks         String
+  skillsPracticed String[]
+  evidenceBlobKeys String[]
+  status        TimesheetStatus @default(SUBMITTED)
+  signedOffById String?
+  signedOffAt   DateTime?
+  createdAt     DateTime        @default(now())
+
+  @@unique([engagementId, weekStart])
+}
+
+/// Snapshot of each monthly ETI calculation (inputs + result) for audit.
+model IncentiveCalc {
+  id            String     @id @default(cuid())
+  engagementId  String
+  engagement    Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  claimMonth    String     // YYYY-MM
+  rulesVersion  String     // ETI_RULES.effectiveFrom
+  inputs        Json
+  eligible      Boolean
+  amount        Decimal    @db.Decimal(10, 2)
+  reasons       String[]
+  createdAt     DateTime   @default(now())
+
+  @@unique([engagementId, claimMonth])
+}
+
+model Consent {
+  id        String      @id @default(cuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      ConsentType
+  version   String
+  granted   Boolean
+  createdAt DateTime    @default(now())
+
+  @@index([userId, type])
+}
+
+model Report {
+  id           String   @id @default(cuid())
+  reporterId   String
+  reporter     User     @relation("reporter", fields: [reporterId], references: [id])
+  targetUserId String
+  reason       String
+  resolved     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+}
+
+/// Who did what, when. Also strengthens the evidence story in a SARS audit.
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id])
+  action    String   // e.g. TIMESHEET_SIGNED_OFF, AI_MATCH_SHOWN
+  entity    String
+  entityId  String
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+}

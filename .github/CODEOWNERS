@@ -1,0 +1,9 @@
+# Replace @handles with your teammates' GitHub usernames once roles are picked.
+/packages/incentives/  @ROLE_A
+/packages/documents/   @ROLE_A
+/packages/matching/    @ROLE_B
+/apps/web/app/youth/   @ROLE_B
+/apps/web/app/business/ @ROLE_C
+/packages/db/          @ROLE_D
+/.github/              @ROLE_D
+/infra/                @ROLE_D

@@ -1,0 +1,15 @@
+{
+  "name": "opportunity-bridge",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm --filter web build",
+    "test": "pnpm -r --if-present test",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "db:generate": "pnpm --filter @ob/db generate",
+    "db:migrate": "pnpm --filter @ob/db migrate",
+    "db:seed": "pnpm --filter @ob/db seed"
+  }
+}
