@@ -1,6 +1,7 @@
 // Starter seed (role D expands to 10 SMEs / 30 youth). Run: pnpm db:seed
 // Fictional people and businesses only.
 import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
@@ -16,14 +17,25 @@ const youth = [
   { name: "Lerato Khumalo", dob: "2005-11-20", suburb: "Alexandra", lat: -26.1034, lng: 28.0967, skills: ["graphic design", "canva", "social media"] },
 ];
 
+// Demo password for ALL seeded accounts. Fictional data only; never use in production.
+const DEMO_PASSWORD = process.env.SEED_PASSWORD ?? "ChangeMe-Demo1";
+
 async function main() {
+  const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
+
+  await prisma.user.upsert({
+    where: { email: "admin@example.co.za" },
+    update: { passwordHash, role: "ADMIN" },
+    create: { email: "admin@example.co.za", name: "Demo Admin", role: "ADMIN", passwordHash },
+  });
+
   for (const b of businesses) {
     const email = `${b.name.toLowerCase().replace(/[^a-z]+/g, ".")}@example.co.za`;
     await prisma.user.upsert({
       where: { email },
-      update: {},
+      update: { passwordHash },
       create: {
-        email, name: b.name, role: "BUSINESS",
+        email, name: b.name, role: "BUSINESS", passwordHash,
         business: { create: {
           name: b.name, sector: b.sector, suburb: b.suburb, lat: b.lat, lng: b.lng,
           verificationTier: b.tier, payeRegistered: true, taxCompliant: true,
@@ -39,9 +51,9 @@ async function main() {
     const email = `${y.name.toLowerCase().replace(/[^a-z]+/g, ".")}@example.co.za`;
     await prisma.user.upsert({
       where: { email },
-      update: {},
+      update: { passwordHash },
       create: {
-        email, name: y.name, role: "YOUTH",
+        email, name: y.name, role: "YOUTH", passwordHash,
         youthProfile: { create: {
           dateOfBirth: new Date(y.dob), suburb: y.suburb, lat: y.lat, lng: y.lng,
           skills: y.skills, highestGrade: 12, transportMode: "taxi",
@@ -53,6 +65,7 @@ async function main() {
       },
     });
   }
+  console.log("Admin login: admin@example.co.za / (SEED_PASSWORD or default)");
   console.log("Seeded", businesses.length, "businesses and", youth.length, "youth.");
 }
 
