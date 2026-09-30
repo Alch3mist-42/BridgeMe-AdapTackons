@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PopiaConsentBanner } from "@/components/PopiaConsentBanner";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -10,6 +11,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <Link href="/admin/audit">Audit log</Link>
       </nav>
       {children}
+      <PopiaConsentBanner />
     </div>
   );
 }
