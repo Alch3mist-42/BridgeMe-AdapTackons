@@ -10,7 +10,7 @@ const securityHeaders = [
 
 const config: NextConfig = {
   output: "standalone", // small, self-contained bundle for Azure App Service
-  transpilePackages: ["@ob/incentives", "@ob/matching", "@ob/documents"],
+  transpilePackages: ["@ob/incentives", "@ob/matching", "@ob/documents", "@ob/db"],
   poweredByHeader: false,
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
