@@ -76,7 +76,9 @@ async function main() {
   });
 
   for (const b of businesses) {
-    const [lat, lng] = PLACES[b.suburb];
+    const coords = PLACES[b.suburb];
+    if (!coords) throw new Error(`Unknown suburb: ${b.suburb}`);
+    const [lat, lng] = coords;
     const email = emailOf(b.name);
     await prisma.user.upsert({
       where: { email },
@@ -96,7 +98,9 @@ async function main() {
   }
 
   for (const [i, [name, dob, suburb, skills]] of youth.entries()) {
-    const [lat, lng] = PLACES[suburb];
+    const coords = PLACES[suburb];
+    if (!coords) throw new Error(`Unknown suburb: ${suburb}`);
+    const [lat, lng] = coords;
     await prisma.user.upsert({
       where: { email: emailOf(name) },
       update: { passwordHash },
