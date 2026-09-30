@@ -1,6 +1,5 @@
 import Link from "next/link";
 
-// Navigation only. Each admin page still calls requirePageRole(["ADMIN"]) itself.
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="space-y-6">
